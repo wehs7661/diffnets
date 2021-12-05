@@ -89,7 +89,8 @@ def preprocess_data(sim_dirs,pdb_fns,outdir,atom_sel=None,stride=1):
         for fn in var_pdb_fns:
             pdb = md.load(fn)
             n_resis.append(pdb.top.n_residues)
-        if len(np.unique(n_resis)) != 1:
+        print(f'unique: {len(np.unique(n_resis))}')
+        if len(np.unique(n_resis)) != 1:  # np.unique remove the repeptitive numbers and sort the rest
             raise ImproperlyConfigured(
                 f'The PDBs supplied have different numbers of residues. The '
                  'default atom selection does not work in this case. Please '
@@ -118,10 +119,11 @@ def preprocess_data(sim_dirs,pdb_fns,outdir,atom_sel=None,stride=1):
     proc_traj = ProcessTraj(var_dir_names,var_pdb_fns,outdir,stride=stride,
                             atom_sel=atom_sel)
     proc_traj.run()
-    print("Aligned trajectories")
+    print("\nFinished aligning trajectories!")
     whiten_traj = WhitenTraj(outdir)
-    print("starting trajectory whitening")
+    print("\nStart whitening the input trajectories ...")
     whiten_traj.run()
+    print("\nFinished data whitening!\n")
     
 nn_d = {
     'nnutils.split_sae': nnutils.split_sae,
@@ -137,7 +139,7 @@ def train(config):
                 train_sample.txt for parameter descriptions.
     """
     with open(config) as f:
-        job = yaml.load(f)
+        job = yaml.load(f, Loader=yaml.FullLoader)
  
     required_keys = ['data_dir','n_epochs','act_map','lr','n_latent',
                      'hidden_layer_sizes','em_bounds','do_em','em_batch_size',
@@ -146,7 +148,7 @@ def train(config):
                      'subsample','outdir','data_in_mem']
     optional_keys = ["close_inds_fn","label_spreading"]
 
-    if hasattr(job['nntype'], 'split_inds'):
+    if hasattr(job['nntype'], 'split_inds'):  # WTH: Likely useless. At this point, job['nntype'] is a string anyway and should not have attributes like split_inds
         required_keys.append("close_inds_fn")
 
     if "label_spreading" in job.keys():
@@ -163,14 +165,14 @@ def train(config):
             else:
                 raise ImproperlyConfigured(
                 f'{key} is not a valid parameter. Check yaml file.')
-
-    if len(required_keys) != 0:
+    
+    if len(required_keys) != 0:  # If the parameter is in config.yml, hence in job.keys(), it would have been removed from required_keys.
         raise ImproperlyConfigured(
                 f'Missing the following parameters in {config} '
                  '{required_keys} ')
    
-    data_dir  = job['data_dir']
-    data_fns = get_fns(data_dir,"*.npy")
+    data_dir  = job['data_dir']   # e.g. ./whitened_data
+    data_fns = get_fns(data_dir,"*.npy")  # e.g. wm.npy, uwm.npy, traj_lens.npy, cm.npy, c00.npy
     wm_fn = os.path.join(data_dir,"wm.npy")
     if wm_fn not in data_fns:
         raise ImproperlyConfigured(
@@ -178,26 +180,29 @@ def train(config):
                  'need to re-run data preprocessing step.')
 
     xtc_fns = os.path.join(data_dir,"aligned_xtcs")
-    data_fns = get_fns(xtc_fns,"*.xtc")
+    data_fns = get_fns(xtc_fns,"*.xtc")   # e.g. 000000.xtc, 000001.xtc, ...
     ind_fns = os.path.join(data_dir,"indicators")
-    inds = get_fns(ind_fns,"*.npy")
+    inds = get_fns(ind_fns,"*.npy")       # e.g. 000000.npy, 000001.npy, ...
+
     if (len(inds) != len(data_fns)) or len(inds)==0:
         raise ImproperlyConfigured(
                 f'Number of files in aligned_xtcs and indicators should be '
                   'equal. Likely need to re-run data preprocessing step.')
-    last_indi = np.load(inds[-1])
+    last_indi = np.load(inds[-1])   # the last indicator file
   
     n_cores = mp.cpu_count()
     master_fn = os.path.join(job['data_dir'], "master.pdb")
     master = md.load(master_fn)
     n_atoms = master.top.n_atoms
     n_features = 3 * n_atoms
-    job['layer_sizes'] =[n_features,n_features]
-    if len(job['hidden_layer_sizes']) == 0:
-        job['layer_sizes'].append(int(n_features/4))
+
+    job['layer_sizes'] =[n_features,n_features]   # Original layer size
+    if len(job['hidden_layer_sizes']) == 0:       
+        job['layer_sizes'].append(int(n_features/4))  # 4-fold reduction by default
     else: 
         for layer in job['hidden_layer_sizes']:
             job['layer_sizes'].append(layer)
+
     job['layer_sizes'].append(job['n_latent'])
     job['act_map'] = np.array(job['act_map'],dtype=float)
     job['em_bounds'] = np.array(job['em_bounds'])
@@ -228,16 +233,16 @@ def train(config):
 
     if 'close_inds_fn' in job.keys():
         if hasattr(job['nntype'], 'split_inds'):
-            inds = np.load(job['close_inds_fn'])
+            inds = np.load(job['close_inds_fn'])  # Should be relative to master.pdb
             close_xyz_inds = []
             for i in inds:
-                close_xyz_inds.append(i*3)
-                close_xyz_inds.append((i*3)+1)
-                close_xyz_inds.append((i*3)+2)
+                close_xyz_inds.append(i*3)      # index of x coord of atom i in all_inds
+                close_xyz_inds.append((i*3)+1)  # index of y coord of atom i in all_inds
+                close_xyz_inds.append((i*3)+2)  # index of z coord of atom i in all_inds
             all_inds = np.arange((master.n_atoms*3))
             non_close_xyz_inds = np.setdiff1d(all_inds,close_xyz_inds)
-            job['inds1'] = np.array(close_xyz_inds)
-            job['inds2'] = non_close_xyz_inds
+            job['inds1'] = np.array(close_xyz_inds)   # for encoder A
+            job['inds2'] = non_close_xyz_inds         # for encoder B
         else:
             raise ImproperlyConfigured(
                 f'Indices chosen for a split autoencoder architecture '
