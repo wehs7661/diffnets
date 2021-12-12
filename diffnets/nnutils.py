@@ -30,8 +30,9 @@ class split_ae(nn.Module):
 
     def __init__(self,layer_sizes,inds1,inds2,wm,uwm):
         super(split_ae, self).__init__()
+        
         self.sizes = layer_sizes
-        self.n = len(self.sizes)
+        self.n = len(self.sizes)  
         self.inds1 = inds1
         self.inds2 = inds2
         self.n_features = len(self.inds1)+len(self.inds2)
@@ -39,20 +40,22 @@ class split_ae(nn.Module):
         self.wm2 = wm[self.inds2[:,None],self.inds2]
         self.uwm = uwm
         self.ratio = len(inds1)/(len(inds1)+len(inds2))
-
+        
+        if self.n > 2:  # just to prevent repeptitive printing when building input/output layers
+            print('    Building the encoders ...')
         self.encoder1 = nn.ModuleList()
         self.encoder2 = nn.ModuleList()
         self.encoder1.append(nn.Linear(len(inds1),len(inds1)))
         self.encoder2.append(nn.Linear(len(inds2),len(inds2)))
-        for i in range(1,self.n-1):
+        for i in range(1,self.n-1):  # hidden layers
             small_layer_in = int(np.ceil(self.sizes[i]*self.ratio))
-            print(small_layer_in)
+            print(f'        Input dimension of layer {i} in Encoder A: {small_layer_in}')
             small_layer_out = int(np.ceil(self.sizes[i+1]*self.ratio))
-            print(small_layer_out)
+            print(f'        Output dimension of layer {i} in Encoder A: {small_layer_out}')
             big_layer_in = int(np.floor(self.sizes[i] * (1-self.ratio)))
-            print(big_layer_in)
+            print(f'        Input dimension of layer {i} in Encoder B: {big_layer_in}')
             big_layer_out = int(np.floor(self.sizes[i+1] * (1-self.ratio)))
-            print(big_layer_out)
+            print(f'        Output dimension of layer {i} in Encoder B: {big_layer_out}')
             #if small_layer_in < 3:
             #    small_layer_in = 3
             #    big_layer_in = self.sizes[i]-3
@@ -63,10 +66,12 @@ class split_ae(nn.Module):
             self.encoder1.append(nn.Linear(small_layer_in, small_layer_out))
             self.encoder2.append(nn.Linear(big_layer_in,big_layer_out))
 
+        if self.n > 2:
+            print('\n    Building the decoder ...')
         self.decoder = nn.ModuleList()
         for i in range(self.n-1,0,-1):
             self.decoder.append(nn.Linear(self.sizes[i], self.sizes[i-1]))
-
+    
     @property
     def split_inds(self):
         return True
@@ -141,7 +146,7 @@ class split_ae(nn.Module):
         x2 = x[:,self.inds2]
         lat1 = self.encoder1[0](x1)
         lat2 = self.encoder2[0](x2)
-        for i in range(1, self.n-1):
+        for i in range(1, self.n-1):  # go through the hidden layers
             lat1 = F.leaky_relu(self.encoder1[i](lat1))
             lat2 = F.leaky_relu(self.encoder2[i](lat2))
         return lat1, lat2
@@ -160,7 +165,7 @@ class split_ae(nn.Module):
             Reconstruction of the original input data
         """
         recon = latent
-        for i in range(self.n-2):
+        for i in range(self.n-2):   # 2 corresponding to the input and output layers (WTH)
             recon = F.leaky_relu(self.decoder[i](recon))
         recon = self.decoder[-1](recon)
         return recon
@@ -253,11 +258,14 @@ class ae(nn.Module):
         self.n = len(self.sizes)
         self.wm = wm
         self.uwm = uwm
-
+        
+        if self.n > 2:
+            print('    Building the encoder ...')
         self.encoder = nn.ModuleList()
         for i in range(self.n-1):
             self.encoder.append(nn.Linear(self.sizes[i], self.sizes[i+1]))
-
+        if self.n > 2: 
+            print('\n    Building the decoder ...')
         self.decoder = nn.ModuleList()
         for i in range(self.n-1, 0, -1):
             self.decoder.append(nn.Linear(self.sizes[i], self.sizes[i-1]))
