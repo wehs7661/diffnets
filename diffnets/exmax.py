@@ -89,7 +89,19 @@ def expectation_range_CUBIC(P, lower, upper):
         D = distribution_of_sum(P, [i])
         PROB_IN_RANGE_CONDITION_ON_I = sum(D[max(0, lower - 1): min(N, upper)])  
         E[i] = P[i] * PROB_IN_RANGE_CONDITION_ON_I / PROB_IN_RANGE
-
+        """
+        import numpy as np
+        if np.isnan(E[i]) or np.isinf(E[i]):
+            print(E[i])
+            print('P[i] ', P[i])
+            print('PROB_IN_RANGE ', PROB_IN_RANGE)
+            print('PROB_IN_RANGE_CONDITION_ON_I', PROB_IN_RANGE_CONDITION_ON_I)
+            print(P[i] * PROB_IN_RANGE_CONDITION_ON_I)
+            print(PROB_IN_RANGE_CONDITION_ON_I / PROB_IN_RANGE)
+            print(P[i] * PROB_IN_RANGE_CONDITION_ON_I / PROB_IN_RANGE)
+            import sys
+            sys.exit()
+        """
         #Alternative, equivalent implementation
         #POS = sum(D[max(0, lower - 1): min(N, upper)]) * P[i]
         #NEG = sum(D[max(0, lower): min(N, upper + 1)]) * (1 - P[i])

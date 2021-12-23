@@ -350,13 +350,14 @@ class Trainer:
         em_batch_size = job['em_batch_size']
         em_n_cores = job['em_n_cores']
         outdir = job['outdir'] 
+        w_loss = job['w_loss']
 
         use_cuda = torch.cuda.is_available()
         device = torch.device("cuda:0" if use_cuda else "cpu")
 
         n_test = test_inds.shape[0]
-        lam_cls = 1.0    # does not change the value at all, possibly just a place convenient ofr changing the weight of the classification error
-        lam_corr = 1.0   # not used at all.
+        lam_cls = w_loss[0]    # does not change the value at all, possibly just a place convenient ofr changing the weight of the classification error
+        lam_corr = w_loss[1]   # not used at all.
 
         n_batch = np.ceil(train_inds.shape[0]*1.0/subsample/batch_size)
 
@@ -388,6 +389,7 @@ class Trainer:
                 loss = nnutils.my_mse(local_batch, x_pred)
                 loss += nnutils.my_l1(local_batch, x_pred)
                 if class_pred is not None:
+                    local_labels = local_labels.reshape(-1, 1)  # for gaussian and bimodal label spreading
                     loss += bce(class_pred, local_labels).mul_(lam_cls)
                 
                 #Minimize correlation between latent variables
@@ -658,6 +660,11 @@ class Trainer:
             old_net = nntype(layer_sizes[0:2],wm,uwm)
         old_net.freeze_weights()
         
+        print('\nNote: Below are the weights of each kind of loss function:')
+        print(f'    Reconstruction loss: 1.0')
+        print(f'    Classification error: {job["w_loss"][0]}')
+        print(f'    Correlation penalty: {job["w_loss"][1]}')
+
         ordinal = lambda n: "%d%s" % (n,"tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
         for cur_layer in range(2,len(layer_sizes)):
             if hasattr(nntype, 'split_inds'):

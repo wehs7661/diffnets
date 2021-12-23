@@ -146,15 +146,24 @@ def train(config):
                      'nntype','batch_size','batch_output_freq',
                      'epoch_output_freq','test_batch_size','frac_test',
                      'subsample','outdir','data_in_mem']
-    optional_keys = ["close_inds_fn","label_spreading"]
+    optional_keys = ["close_inds_fn","label_spreading","w_loss"]
 
-    if hasattr(job['nntype'], 'split_inds'):  # WTH: Likely useless. At this point, job['nntype'] is a string anyway and should not have attributes like split_inds
+    if hasattr(job['nntype'], 'split_inds'):
         required_keys.append("close_inds_fn")
 
     if "label_spreading" in job.keys():
         if job["label_spreading"] not in ["gaussian","uniform","bimodal"]:
             raise ImproperlyConfigured(
                 f'label_spreading must be set to gaussian or uniform')
+    
+    # Added by WTH: w_loss=[w_cls, w_corr] relative to the weight of recon (alsways set as 1)
+    if "w_loss" in job.keys():
+        if len(job['w_loss']) != 2:
+            raise ImproperlyConfigured(
+                    'w_loss should have 2 elements!')
+        job['w_loss'] = np.array(job['w_loss'])
+    else:
+        job['w_loss'] = np.array([1, 1])  # equally weighted
 
     for key in job.keys():
         try:
@@ -191,6 +200,13 @@ def train(config):
     last_indi = np.load(inds[-1])   # the last indicator file
   
     n_cores = mp.cpu_count()
+    
+    # WTH: Lines below are added to prevent UserWarning: This DataLoader will create xx worker processes in total. Our suggested max number of worker in current system is xx, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+
+    max_cores = len(os.sched_getaffinity(0))
+    if n_cores > max_cores:
+        n_cores = max_cores
+    
     master_fn = os.path.join(job['data_dir'], "master.pdb")
     master = md.load(master_fn)
     n_atoms = master.top.n_atoms
@@ -258,6 +274,7 @@ def train(config):
 
     trainer = Trainer(job)
     net = trainer.run(data_in_mem=job['data_in_mem'])
+    print("\nFinished training the DiffNets! " + "\U0001F37A" * 3 + '\n')
 
 @cli.command(name='analyze')
 @click.argument('data_dir')
@@ -309,8 +326,9 @@ def analyze(data_dir,net_dir,inds=None,cluster_number=1000,n_distances=100):
     # score and generates a .pml that can be opened with master.pdb
     # to generate a figure showing what the diffnet learned.
     #Indices for feature analysis
+    print('\nFinding representative features distiniguishing the ensembles ...')
     if inds is None:
-        print("inds is none")
+        print("    Note: No indices with respect to the reference PDB structure are provided.")
         inds = np.arange(n)
     else:
         try:
@@ -323,6 +341,7 @@ def analyze(data_dir,net_dir,inds=None,cluster_number=1000,n_distances=100):
                  num2plot=n_distances)
 
     #Generate a morph of structures along the DiffNets classification score
+    print('\nGenerating representative structures for classification labels from 0 to 1 ...')
     a.morph()
     #print("analysis done")
 

@@ -54,6 +54,7 @@ class Analysis:
         utils.mkdir(enc_dir)
         xtc_dir = os.path.join(self.datadir, "aligned_xtcs")
         encode_dir(self.net, xtc_dir, enc_dir, self.top, self.n_cores, self.cm)
+        print('    Input trajectories encoded!')
 
     def recon_traj(self):
         """Reconstruct all trajectory frames using the trained neural 
@@ -63,7 +64,7 @@ class Analysis:
         enc_dir = os.path.join(self.netdir, "encodings")
         recon_traj_dir(self.net, enc_dir, recon_dir, self.top.top,
                        self.cm, self.n_cores)
-        print("trajectories reconstructed")
+        print("    Trajectories reconstructed!")
 
     def get_labels(self):
         """Calculate the classification score for all trajectory frames
@@ -72,7 +73,7 @@ class Analysis:
         utils.mkdir(label_dir)
         enc_dir = os.path.join(self.netdir, "encodings")
         calc_labels(self.net, enc_dir, label_dir, self.n_cores)
-        print("labels calculated for all states")
+        print("    Classification labels for all frames calculated!")
 
     def get_rmsd(self):
         """Calculate RMSD between actual trajectory frames and autoencoder
@@ -165,7 +166,8 @@ class Analysis:
         clusters : enspara cluster object
             Cluster object with center_indices attribute
         """
-        if not clusters:
+        print('    Finding distances most correlated with changes in the classification labels ...')
+        if not clusters:  # if an enspara cluster object is provided
             cc_dir = os.path.join(self.netdir, "cluster_%d" % n_states)
             utils.mkdir(cc_dir)
 
@@ -177,7 +179,7 @@ class Analysis:
                                          n_clusters=n_states, n_iters=1)
             cluster_fn = os.path.join(cc_dir, "clusters.pkl")
             pickle.dump(clusters, open(cluster_fn, 'wb'))
-
+        
         find_features(self.net,self.datadir,self.netdir,
             clusters.center_indices,inds,out_fn,num2plot=num2plot)
 
@@ -185,12 +187,16 @@ class Analysis:
         """Wrapper to run the analysis functions that should be 
         run after training.
         """
+        print('Encoding the input trajectories into latent space data ...')
         self.encode_data()
-        
+
+        print('\nDecoding the latent space data to recontruct the trajectories ...')
         self.recon_traj()
 
+        print('\nGetting the classification labels for all frames in all input trajectories ...')
         self.get_labels()
         
+        print('\nCalculating the RMSD between the reconstructed trajectories and the input trajectories ...')
         self.get_rmsd()
 
 def euc_dist(trj, frame):
@@ -231,16 +237,16 @@ def recon_traj_dir(net, enc_dir, recon_dir, top, cm, n_cores):
     pool.close()
 
 def _calc_labels(enc_fn, net, label_dir):
-    enc = np.load(enc_fn)
+    enc = np.load(enc_fn)   # shape: (n_frames, n_latent)
     if hasattr(net,"split_inds"):
-        x = net.encoder1[-1].out_features
-        enc = enc[:,:x]
+        x = net.encoder1[-1].out_features  # the number of latent variables in encoder1
+        enc = enc[:,:x]    # shape: (n_frames, x), basically get the encoded data of encoder1
     enc = Variable(torch.from_numpy(enc).type(torch.FloatTensor))
     labels = net.classify(enc)
     labels = labels.detach().numpy()
 
     new_fn = os.path.split(enc_fn)[1]
-    new_fn = os.path.join(label_dir, "lab" + new_fn)
+    new_fn = os.path.join(label_dir, "lab" + new_fn)  # e.g. lab000000.npy in labels
     np.save(new_fn, labels)
 
 def calc_labels(net, enc_dir, label_dir, n_cores):
@@ -258,7 +264,8 @@ def get_rmsd_dists(orig_traj, recon_traj):
         print("Can't get rmsds between trajectories of different lengths")
         return
     pairwise_rmsd = []
-    for i in range(0, n_frames, 10):
+    current = mp.current_process()
+    for i in arange(0, n_frames, 10):
         r = md.rmsd(recon_traj[i], orig_traj[i], parallel=False)[0]
         pairwise_rmsd.append(r)
     pairwise_rmsd = np.array(pairwise_rmsd)
@@ -295,8 +302,8 @@ def _encode_dir(xtc_fn, net, outdir, top, cm):
     else:
         output = net.encode(x)
     output = output.detach().numpy()
-    new_fn = os.path.split(xtc_fn)[1]
-    new_fn = os.path.splitext(new_fn)[0] + ".npy"
+    new_fn = os.path.split(xtc_fn)[1]    # e.g. 000000.xtc
+    new_fn = os.path.splitext(new_fn)[0] + ".npy"   # then it becomes 000000.npy
     new_fn = os.path.join(outdir, new_fn)
     np.save(new_fn, output)
 
@@ -328,14 +335,16 @@ def morph_label(net,nn_dir,data_dir,n_frames=10):
 
     my_min = np.min(labels)
     my_max = np.max(labels)
+    print(f'    The minimum of the classification labels of all frames: {my_min}')
+    print(f'    The maximum of the classification labels of all frames: {my_max}')
+
     morph_enc = np.zeros((n_frames,n_latent))
-    vals = np.linspace(my_min, my_max, n_frames)
+    vals = np.linspace(my_min, my_max, n_frames) 
     delta = (vals[1] - vals[0]) * 0.5
     for i in range(n_frames):
         val = vals[i]
         inds = np.where(np.logical_and(labels>=val-delta,
-                                   labels<=val+delta))[0]
-
+                                   labels<=val+delta))[0]  # indices that meet the requirements
         for j in range(n_latent):
             x = np.mean(enc[inds,j])
             morph_enc[i, j] = x
@@ -359,47 +368,55 @@ def get_rmsf(traj):
 def find_features(net,data_dir,nn_dir,clust_cents,inds,out_fn,num2plot=100):
     #Need to atom custom indices
     encs_dir = os.path.join(nn_dir,"encodings")
-    encs = utils.load_npy_dir(encs_dir,"*.npy")
-    encs = encs[clust_cents]
+    
+    encs = utils.load_npy_dir(encs_dir,"*.npy")   # shape: (n_frames, n_latent)
+    encs = encs[clust_cents]  # shape: (n_cluster, n_latent), len(clust_cents)=n_cluster
 
     cm = np.load(os.path.join(data_dir,"cm.npy"))
     top = md.load(os.path.join(data_dir,"master.pdb"))
-    traj = recon_traj(encs,net,top.top,cm)
-    print("trajectory calculated")
+    traj = recon_traj(encs,net,top.top,cm)   # number of frames: n_cluster
+
+    print("    Calculating interatomic distances ...")
     all_pairs = list(itertools.product(inds, repeat=2))
     distances = md.compute_distances(traj,all_pairs)
 
     labels_dir = os.path.join(nn_dir,"labels")
     labels = utils.load_npy_dir(labels_dir,"*.npy")
+    
     labels = labels[clust_cents]
 
-    n = len(inds)
-    print(n, " distances being calculated")
+    n = len(inds)  # number of atoms for distance calculation
     r_values = []
     slopes = []
     for i in np.arange(n*n):
+        # labels.flatten().shape = (n_cluster,); distances.shape = (n_cluster, n^2); distances[:, i].shape = (n_cluster,)
         slope, intercept, r_value, p_value, std_err = stats.linregress(labels.flatten(),distances[:,i])
         r_values.append(r_value)
         slopes.append(slope)
 
     r2_values = np.array(r_values)**2
+    sort_idx = np.argsort(r2_values)[-num2plot:]
+    print(f"    Among the {num2plot} distances best correlated with the  classification labels:")
+    print(f"        The highest R-squared value is {r2_values[sort_idx[-1]]: .4f}.")
+    print(f"        The lowest R-squared value is {r2_values[sort_idx[0]]: .4f}.")
+    
     corr_slopes = []
     count = 0
-    print("Starting to write pymol file")
+    print("    Writing the PyMOL file ...")
     f = open(os.path.join(nn_dir,out_fn), "w")
     for i in np.argsort(r2_values)[-num2plot:]:
-        corr_slopes.append(slopes[i])
+        corr_slopes.append(slopes[i])  # not used at all
         #print(slopes[i],r2_values[i],i)
-        j,k = np.array(all_pairs)[i,:]
+        j,k = np.array(all_pairs)[i,:]   # get the pair of atoms
         jnum = top.top.atom(j).residue.resSeq
         jname = top.top.atom(j).name
         knum = top.top.atom(k).residue.resSeq
         kname = top.top.atom(k).name
-        if slopes[i] < 0:
+        if slopes[i] < 0:   # The larger the label, the smaller the distance --> red
             f.write("distance dc%s, master and resi %s and name %s, master and resi %s and name %s\n" % (count,jnum,jname,knum,kname))
             f.write("color red, dc%s\n" % count)
             f.write("hide label\n")
-        else:
+        else:              # The larger the label, the larger the distance --> blue
             f.write("distance df%s, master and resi %s and name %s, master and resi %s and name %s\n" % (count,jnum,jname,knum,kname))
             f.write("color blue, df%s\n" % count)
             f.write("hide label\n")

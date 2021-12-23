@@ -217,6 +217,7 @@ class ProcessTraj:
         # make sure the node has enough memory for all 20 trajectories
         # or your job might stall without crashing :/
         n_cores = mp.cpu_count()
+        print(f"\nNote: {n_cores} cores will be used.")
         pool = mp.Pool(processes=n_cores)  # use n_cores to run the process
         f = functools.partial(self._preprocess_traj)
         result = pool.map_async(f, inputs)
