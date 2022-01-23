@@ -159,11 +159,12 @@ class ProcessTraj:
         traj_fn, top_fn, traj_num, var_ind = inputs
         
         # 1. Loading the trajectory
-        print(f"\nProcessing traj {traj_num} ({traj_fn}) with top {top_fn} ...")
+        print(f"\nProcessing traj {traj_num} ({traj_fn}) with top {top_fn} ...", end='')
         if type(self.stride) == np.ndarray:
             traj = md.load(traj_fn, top=top_fn, stride=self.stride[var_ind])
         else:
             traj = md.load(traj_fn, top=top_fn, stride=self.stride)
+        print(f" --> {traj.n_frames} simulation frames!")
         
         # 2. Stripping the trajectory 
         print(f'    Stripping traj {traj_num} to a subset of the selected atoms ...')
@@ -176,6 +177,7 @@ class ProcessTraj:
         # 3. Aligning the trajectory
         print(f'    Superposing traj {traj_num} to master.pdb ...')  # All the trajectores are superposed against master.pdb
         traj = traj.superpose(self.master, parallel=False)
+        # rmsd = md.rmsd(traj, self.master, parallel=False)
         
         # 4. save traj and its center of mass
         print(f'    Saving the aligned trajectory of traj {traj_num} as {str(traj_num).zfill(6)}.xtc" ...')

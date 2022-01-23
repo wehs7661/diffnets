@@ -109,13 +109,14 @@ def preprocess_data(sim_dirs,pdb_fns,outdir,atom_sel=None,stride=1):
         if n_traj == 0:
             raise ImproperlyConfigured(
                 "Found no trajectories in %s" % vd)
-        try: 
+        """
+        try:  # This is too memory intensive and traj is not used later. 
             traj = md.load(traj_fns[0],top=fn)
         except:
             click.echo(f'Order of pdb_fns and sim_dirs need to '
                 'correspond to each other.')
             raise
-    
+        """
     proc_traj = ProcessTraj(var_dir_names,var_pdb_fns,outdir,stride=stride,
                             atom_sel=atom_sel)
     proc_traj.run()
